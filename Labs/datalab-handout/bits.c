@@ -152,9 +152,9 @@ int bitXor(int x, int y) {
  *   Rating: 1
  */
 int tmin(void) {
-  /*
-   * so werid
-   */
+/*
+ * so werid
+ */
   return 1<<31;
 }
 
@@ -212,7 +212,12 @@ int isAsciiDigit(int x) {
  *   Rating: 3
  */
 int conditional(int x, int y, int z) {
-  return (((!(!x))<<31)&y)|(((!x)<<31)&z);
+/*
+ * mask_x represent the sign bit of x but when it's not zero, mask_x is 0xFFFFFFFF
+ */
+  int neg_x = ~x+1;
+  int mask_x = (x>>31)|(neg_x>>31);
+  return (mask_x&y)|((~mask_x)&z);
 }
 /* 
  * isLessOrEqual - if x <= y  then return 1, else return 0 
@@ -222,7 +227,16 @@ int conditional(int x, int y, int z) {
  *   Rating: 3
  */
 int isLessOrEqual(int x, int y) {
-  return ((x>>31&y>>31)|(!!((x+(~y+1)-1)>>31)))&;
+/*
+ * using diffsign_mask represent x and y is in different sign bit
+ * full of 1 means diff, 0 means the same
+ *
+ * when the sign bit is diff, found that the result is the same as x's sign bit
+ * when the sign bit is the same
+ * using -y equals ~y+1 and x-y-1(minus 1 for the case of 0's sign bit is 0) to compute
+ */
+  int diffsign_mask = x>>31^y>>31;
+  return !!((~diffsign_mask|(diffsign_mask&(x>>31)))&(diffsign_mask|((x+(~y+1)-1)>>31)));
 }
 //4
 /* 
@@ -234,7 +248,13 @@ int isLessOrEqual(int x, int y) {
  *   Rating: 4 
  */
 int logicalNeg(int x) {
-  return (x&1);
+  // arithmetic negate
+  // int mask_x = ~((~!x)+1);
+  // int mask_tmin = (1<<31);
+  // return mask_x&((~x&mask_tmin)|(x&~mask_tmin)); 
+  int neg_x = ~x+1;
+  int mask_x = (x>>31)|(neg_x>>31);
+  return (mask_x|(mask_x+1))&(~mask_x);
 }
 /* howManyBits - return the minimum number of bits required to represent x in
  *             two's complement
@@ -249,6 +269,7 @@ int logicalNeg(int x) {
  *  Rating: 4
  */
 int howManyBits(int x) {
+  //TODO
   return 0;
 }
 //float
@@ -264,8 +285,23 @@ int howManyBits(int x) {
  *   Rating: 4
  */
 unsigned floatScale2(unsigned uf) {
-  return 2;
+  int mask_frac = (1<<23)-1;
+  int mask_exp = ((1<<8)-1)<<23;
+  int frac = uf&mask_frac;
+  int exp = uf&mask_exp;
+  int sign = uf&(1<<31);
+  // uf represent NaN or Infinity i.e. exp equals 0xFF
+  if (!(exp^mask_exp)) return uf;
+  //
+  // uf represent denormalized number 
+  if (!exp) return sign+(frac+frac); // FANCY STUFF ABOUT IEEE FLOAT 
+
+  // uf represent normalized number
+  // add exp with 1
+  // return sign+((exp+(1<<23))&(~(1<<31)))+frac;
+  return sign+exp+(1<<23)+frac;
 }
+
 /* 
  * floatFloat2Int - Return bit-level equivalent of expression (int) f
  *   for floating point argument f.
@@ -279,7 +315,23 @@ unsigned floatScale2(unsigned uf) {
  *   Rating: 4
  */
 int floatFloat2Int(unsigned uf) {
-  return 2;
+  int mask_frac = (1<<23)-1;
+  int mask_exp = ((1<<8)-1)<<23;
+  int frac = uf&mask_frac;
+  int exp = uf&mask_exp;
+  int sign = uf&(1<<31);
+  // uf represent NaN or Infinity i.e. exp equals 0xFF
+  if (!(exp^mask_exp)) return 0x80000000u; // trailing u means compiled as unsigned
+  // uf represent denormalized number
+  if (!exp) return 0;
+  // uf represent normalized number, M=1+f, E=e-bias, bias=127
+  // case 1 normailized number is still less than 1
+  // if (((exp>>23)-127) > 0) return 0; // seems not works
+  if ((mask_exp^1<<30)-exp > 0) return 0;
+
+  // case 2 normailized number is larger than 1
+  return 1;
+  // return frac<<(exp>>23-127);
 }
 /* 
  * floatPower2 - Return bit-level equivalent of the expression 2.0^x
