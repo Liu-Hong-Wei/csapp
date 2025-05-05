@@ -167,7 +167,8 @@ int tmin(void) {
  *   Rating: 1
  */
 int isTmax(int x) {
-  return !(~(x^(1<<31)));
+  // make sure x is not 0 then check if ~(x+(1+x))==0 or not
+  return !!(x+1)&!~(x^(x+1));
 }
 /* 
  * allOddBits - return 1 if all odd-numbered bits in word set to 1
@@ -233,10 +234,10 @@ int isLessOrEqual(int x, int y) {
  *
  * when the sign bit is diff, found that the result is the same as x's sign bit
  * when the sign bit is the same
- * using -y equals ~y+1 and x-y-1(minus 1 for the case of 0's sign bit is 0) to compute
+ * using -y equals ~y+1 and y-x to compute
  */
   int diffsign_mask = x>>31^y>>31;
-  return !!((~diffsign_mask|(diffsign_mask&(x>>31)))&(diffsign_mask|((x+(~y+1)-1)>>31)));
+  return !!((~diffsign_mask|(diffsign_mask&(x>>31)))&(diffsign_mask|~((y+(~x+1))>>31)));
 }
 //4
 /* 
@@ -269,8 +270,14 @@ int logicalNeg(int x) {
  *  Rating: 4
  */
 int howManyBits(int x) {
-  //TODO
-  return 0;
+/* 
+ * if x < 0 then return bits(~x+1)
+ * if x == 0 then return 1
+ * if x > 0 then return bits(x) + 1
+ */
+  int sign = (x&(1<<31))>>31;
+  int nega = ~x+1;
+  return 1;
 }
 //float
 /* 
@@ -316,22 +323,37 @@ unsigned floatScale2(unsigned uf) {
  */
 int floatFloat2Int(unsigned uf) {
   int mask_frac = (1<<23)-1;
-  int mask_exp = ((1<<8)-1)<<23;
+  int mask_exp = 0xff<<23;
   int frac = uf&mask_frac;
   int exp = uf&mask_exp;
-  int sign = uf&(1<<31);
+  int sign = uf&(1<<31); // 10 ops
+  int exp_digits = (exp>>23)-127;
+  int check_exp = exp_digits-23;
+  int res_sm = (frac>>(-check_exp)) + (1<<exp_digits);
+  int res_lg = (frac>>check_exp) + (1<<exp_digits);
   // uf represent NaN or Infinity i.e. exp equals 0xFF
   if (!(exp^mask_exp)) return 0x80000000u; // trailing u means compiled as unsigned
+
   // uf represent denormalized number
   if (!exp) return 0;
+
   // uf represent normalized number, M=1+f, E=e-bias, bias=127
   // case 1 normailized number is still less than 1
-  // if (((exp>>23)-127) > 0) return 0; // seems not works
-  if ((mask_exp^1<<30)-exp > 0) return 0;
-
+  if (exp_digits < 0) return 0;
+  // if ((mask_exp^1<<30)-exp > 0) return 0; // works too
   // case 2 normailized number is larger than 1
-  return 1;
-  // return frac<<(exp>>23-127);
+  // while the frac is shift to the right, it cannot exceed the integer range
+  if (check_exp < 0) {
+      if (sign) return ~(res_sm) + 1;
+      return res_sm;
+  }
+  // while the frac is shift to the left, take concerns about the range
+  if (sign) {
+      if (check_exp < 32) return ~(res_lg) + 1;
+      return 0x80000000u; // out of integer range
+  }
+  if (check_exp < 31) return res_lg;
+  return 0x80000000u; // out of integer range
 }
 /* 
  * floatPower2 - Return bit-level equivalent of the expression 2.0^x
@@ -347,5 +369,11 @@ int floatFloat2Int(unsigned uf) {
  *   Rating: 4
  */
 unsigned floatPower2(int x) {
-    return 2;
+  if (x > 128) return 0xff<<23;
+  // too small to be represented
+  if (x < -149) return 0;
+  // denormalized 
+  if (x < -126) return 1<<(149+x);
+  // normalized 
+  return (x+127)<<23;
 }
